@@ -1,6 +1,4 @@
 // Servidor MCP minimal expuesto por HTTP para uso con OpenAI Agents SDK.
-// Incluye 2 tools: usuarios.crear y usuarios.modificar.
-// TODO: reemplazar la lógica de createUser / updateUser por tu implementación real.
 
 import "dotenv/config";
 import express from "express";
@@ -9,77 +7,29 @@ import helmet from "helmet";
 import { randomUUID } from "crypto";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { createUser, updateUser } from "./src/logic.js";
+import { createUserSchema, updateUserSchema } from "./src/schemas.js";
 
 // ========== Config básica ==========
 const PORT = Number(process.env.PORT ?? 3000);
-const API_KEY = process.env.API_KEY || ""; // si querés, hacelo opcional para pruebas locales
+const API_KEY = process.env.API_KEY || "";
 const CORS_ORIGIN = process.env.CORS_ORIGIN || "*";
-
-// ========== Lógica de negocio (PLACEHOLDER) ==========
-// Reemplazá estas funciones por DB/API/etc. Mantenerlas aquí simplifica el starter.
-async function createUser(input) {
-  // input: { id?, email?, nombre?, datos?, upsert? }
-  const id = input?.id ?? randomUUID();
-  return { id, created: true, echo: input }; // devuelve algo mínimo y útil
-}
-
-async function updateUser(input) {
-  // input: { id, set?, unset?, condiciones? }
-  if (!input?.id) throw new Error("Falta 'id' para modificar usuario");
-  return { id: input.id, updated: true, echo: input };
-}
 
 // ========== Construcción del MCP server y registro de tools ==========
 function buildMcpServer() {
   const server = new McpServer({ name: "mcp-user-server", version: "0.1.0" });
 
-  // Tool: usuarios.crear (schema mínimo en JSON Schema para no traer validadores extra)
-  server.registerTool(
-    "usuarios.crear",
-    {
-      title: "Crear usuario",
-      description: "Crea un usuario con los datos provistos.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          id: { type: "string", description: "ID opcional; si falta, se genera" },
-          email: { type: "string", description: "Email (opcional)" },
-          nombre: { type: "string", description: "Nombre (opcional)" },
-          datos: { type: "object", additionalProperties: true, description: "Campos extra" },
-          upsert: { type: "boolean", description: "Permitir upsert/idempotencia" }
-        },
-        additionalProperties: true
-      }
-    },
-    async (input) => {
-      const result = await createUser(input);
-      return { content: [{ type: "text", text: JSON.stringify(result) }] };
-    }
-  );
+  // Tool: usuarios.crear
+  server.registerTool("usuarios.crear", createUserSchema, async (input) => {
+    const result = await createUser(input);
+    return { content: [{ type: "text", text: JSON.stringify(result) }] };
+  });
 
   // Tool: usuarios.modificar
-  server.registerTool(
-    "usuarios.modificar",
-    {
-      title: "Modificar usuario",
-      description: "Modifica campos de un usuario existente.",
-      inputSchema: {
-        type: "object",
-        required: ["id"],
-        properties: {
-          id: { type: "string", description: "ID del usuario" },
-          set: { type: "object", additionalProperties: true, description: "Campos a setear" },
-          unset: { type: "array", items: { type: "string" }, description: "Campos a eliminar" },
-          condiciones: { type: "object", additionalProperties: true, description: "Precondiciones/ETag" }
-        },
-        additionalProperties: true
-      }
-    },
-    async (input) => {
-      const result = await updateUser(input);
-      return { content: [{ type: "text", text: JSON.stringify(result) }] };
-    }
-  );
+  server.registerTool("usuarios.modificar", updateUserSchema, async (input) => {
+    const result = await updateUser(input);
+    return { content: [{ type: "text", text: JSON.stringify(result) }] };
+  });
 
   return server;
 }
@@ -93,7 +43,7 @@ app.use(express.json({ limit: "1mb" }));
 // Auth muy simple por API Key (puedes quitarlo en desarrollo)
 app.use((req, res, next) => {
   if (req.path === "/health") return next();
-  if (!API_KEY) return next(); // si no definiste API_KEY, no exigimos auth
+  if (!API_KEY) return next();
   const token = req.header("authorization")?.replace(/^Bearer\s+/i, "");
   if (token !== API_KEY) return res.status(401).json({ error: "Unauthorized" });
   next();
