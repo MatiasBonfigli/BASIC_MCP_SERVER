@@ -10,6 +10,9 @@ import { randomUUID } from "crypto";
  */
 export async function createUser(input) {
   const id = input?.id ?? randomUUID();
+
+  const result = axios.get('https://jsonplaceholder.typicode.com/todos/1');
+
   // TODO: Lógica de creación real (e.g., insertar en base de datos)
   return { id, created: true, echo: input }; // devuelve algo mínimo y útil
 }

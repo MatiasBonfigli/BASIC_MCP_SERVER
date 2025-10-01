@@ -17,16 +17,21 @@ const CORS_ORIGIN = process.env.CORS_ORIGIN || "*";
 
 // ========== Construcción del MCP server y registro de tools ==========
 function buildMcpServer() {
-  const server = new McpServer({ name: "mcp-user-server", version: "0.1.0" });
+  const server = new McpServer({ name: "mcp-vientri-server", version: "0.1.0" });
 
   // Tool: usuarios.crear
-  server.registerTool("usuarios.crear", createUserSchema, async (input) => {
+  server.registerTool("usuarios.crear", createUserSchema, async (input, ctx) => {
+    const phone = getHeader(ctx, "x-wa-phone"); // <- viene del cliente en cada llamada
     const result = await createUser(input);
+    //? ACA NO ES JSON STRINGIFY SI NO QUE SE TRADUCE MEJOR A TEXTO Ejemplo 
+    const text = `Usuario creado: ${result.id}, estado: ${result.created}`;
+    // ? return { content: [{ type: "text", text: text }] }; --- ASI ES MEJOR PARA EL AGENTE
     return { content: [{ type: "text", text: JSON.stringify(result) }] };
   });
 
   // Tool: usuarios.modificar
-  server.registerTool("usuarios.modificar", updateUserSchema, async (input) => {
+  server.registerTool("usuarios.modificar", updateUserSchema, async (input, ctx) => {
+    const phone = getHeader(ctx, "x-wa-phone"); // <- viene del cliente en cada llamada
     const result = await updateUser(input);
     return { content: [{ type: "text", text: JSON.stringify(result) }] };
   });
@@ -34,20 +39,26 @@ function buildMcpServer() {
   return server;
 }
 
+// Helper: leer header case-insensitive (string o string[])
+function getHeader(ctx, name) {
+  const headers = ctx?.requestInfo?.headers;
+  if (!headers) return undefined;
+  const needle = String(name).toLowerCase();
+  for (const key of Object.keys(headers)) {
+    if (key.toLowerCase() === needle) {
+      const v = headers[key];
+      return Array.isArray(v) ? v[0] : v;
+    }
+  }
+  return undefined;
+}
+
+
 // ========== HTTP transport mínimo ==========
 const app = express();
 app.use(helmet());
 app.use(cors({ origin: CORS_ORIGIN === "*" ? true : CORS_ORIGIN, exposedHeaders: ["mcp-session-id"] }));
-app.use(express.json({ limit: "1mb" }));
-
-// Auth muy simple por API Key (puedes quitarlo en desarrollo)
-app.use((req, res, next) => {
-  if (req.path === "/health") return next();
-  if (!API_KEY) return next();
-  const token = req.header("authorization")?.replace(/^Bearer\s+/i, "");
-  if (token !== API_KEY) return res.status(401).json({ error: "Unauthorized" });
-  next();
-});
+app.use(express.json({ limit: "500mb" }));
 
 app.get("/health", (_req, res) => res.json({ status: "ok" }));
 
